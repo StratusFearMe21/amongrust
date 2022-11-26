@@ -2,6 +2,14 @@
 name = "amongrust"
 version = "0.1.0"
 edition = "2021"
+authors = ["Hiro <yirohido@gmail.com>"]
+license = "MIT"
+description = "Reveal the imposters in your sus codebase"
+readme = "README.md"
+homepage = "https://github.com/0xhiro/amongrust"
+repository = "https://github.com/0xhiro/amongrust"
+keywords = ["amongrust", "imposter", "cli" ,"hiro", "amogus", "amongus"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 walkdir = "2.3.2"
