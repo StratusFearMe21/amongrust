@@ -8,7 +8,7 @@ description = "Reveal the imposters in your sus codebase"
 readme = "README.md"
 homepage = "https://github.com/0xhiro/amongrust"
 repository = "https://github.com/0xhiro/amongrust"
-keywords = ["amongrust", "imposter", "cli" ,"hiro", "amogus", "amongus"]
+keywords = ["amongrust", "imposter", "cli" , "amogus", "amongus"]
 categories = ["command-line-utilities"]
 
 [dependencies]

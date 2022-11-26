@@ -17,7 +17,7 @@ Note: this crate was made by [Hiro](https://twitter.com/0x1hiro) at 2AM in his m
 
 `cargo install amongrust`
 
-That's it. you're done. Now run `cargo amongrust` in your project directory, then check your source code.
+That's it. you're done. Now run `cargo amongrust` in your project directory, then check your sus code.
 
 How to undo: `cargo amongrust -- IAMTHEIMPOSTER`
 
