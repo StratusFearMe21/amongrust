@@ -1,6 +1,6 @@
 [package]
 name = "amongrust"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Hiro <yirohido@gmail.com>"]
 license = "MIT"
