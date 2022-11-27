@@ -14,3 +14,21 @@ categories = ["command-line-utilities"]
 [dependencies]
 walkdir = "2.3.2"
 rand = "0.8.5"
+rodio = { version = "0.14.0", default-features = false }
+magnum = { version = "1.0.0", features = ["with_rodio"] }
+tree-sitter = "0.20.9"
+tree-sitter-rust = "0.20.3"
+clap = { version = "4.0.27", features = ["derive"] }
+helix-lsp = { git = "https://github.com/StratusFearMe21/helix", version = "0.6.0" }
+helix-core = { git = "https://github.com/StratusFearMe21/helix", version = "0.6.0" }
+tokio = { version = "1.22", features = ["rt"] }
+ropey = "1.5.0"
+futures-util = "0.3.25"
+serde_json = "1.0.89"
+serde = { version = "1.0.147", features = ["derive"] }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
