@@ -1,5 +1,9 @@
 use futures_util::TryFutureExt;
-use helix_core::{syntax::RopeProvider, Rope, Transaction};
+use helix_core::{
+    history::{History, State},
+    syntax::RopeProvider,
+    Rope, Selection, Transaction,
+};
 use helix_lsp::{
     jsonrpc::Params,
     lsp::{DocumentChanges, OneOf, TextDocumentIdentifier},
@@ -134,7 +138,10 @@ fn main() {
                 for i in files!() {
                     ropes_hashmap.insert(
                         std::fs::canonicalize(i.path()).unwrap(),
-                        Rope::from_reader(std::fs::File::open(i.path()).unwrap()).unwrap(),
+                        State {
+                            doc: Rope::from_reader(std::fs::File::open(i.path()).unwrap()).unwrap(),
+                            selection: Selection::point(0),
+                        },
                     );
                     let path = std::fs::canonicalize(i.path()).unwrap();
                     let rope = ropes_hashmap.get_mut(&path).unwrap();
@@ -151,13 +158,16 @@ fn main() {
                         parser.parse_with(&mut parse_with_rope, tree).unwrap()
                     }
 
-                    let mut tree = parse_rope(&rope, &mut parser, None);
+                    let mut tree = parse_rope(&rope.doc, &mut parser, None);
 
                     let mut idx = 0;
 
                     loop {
-                        let mut captures =
-                            cursor.captures(&query, tree.root_node(), RopeProvider(rope.slice(..)));
+                        let mut captures = cursor.captures(
+                            &query,
+                            tree.root_node(),
+                            RopeProvider(rope.doc.slice(..)),
+                        );
 
                         let mut uri = String::from("file://");
                         std::fmt::Write::write_fmt(
@@ -171,7 +181,7 @@ fn main() {
                             break;
                         };
                         let start = capture.node.start_position();
-                        let cut_data = dbg!(rope.byte_slice(capture.node.byte_range()));
+                        let cut_data = dbg!(rope.doc.byte_slice(capture.node.byte_range()));
                         let result = lsp
                             .rename_symbol(
                                 TextDocumentIdentifier {
@@ -193,7 +203,7 @@ fn main() {
                             Some(DocumentChanges::Edits(e)) => {
                                 for f in e {
                                     let edit = helix_lsp::util::generate_transaction_from_edits(
-                                        &rope,
+                                        &rope.doc,
                                         f.edits
                                             .into_iter()
                                             .map(|g| match g {
@@ -203,11 +213,6 @@ fn main() {
                                             .collect(),
                                         helix_lsp::OffsetEncoding::Utf8,
                                     );
-                                    helix_core::syntax::generate_edits(&rope, edit.changes())
-                                        .iter()
-                                        .for_each(|f| tree.edit(f));
-                                    edit.apply(rope);
-                                    tree = parse_rope(&rope, &mut parser, Some(&tree));
                                     transaction_hashmap
                                         .entry(
                                             std::fs::canonicalize(
@@ -215,8 +220,13 @@ fn main() {
                                             )
                                             .unwrap(),
                                         )
-                                        .or_insert_with(Vec::new)
-                                        .push(edit);
+                                        .or_insert_with(History::default)
+                                        .commit_revision(&edit, &rope);
+                                    helix_core::syntax::generate_edits(&rope.doc, edit.changes())
+                                        .iter()
+                                        .for_each(|f| tree.edit(f));
+                                    edit.apply(&mut rope.doc);
+                                    tree = parse_rope(&rope.doc, &mut parser, Some(&tree));
                                 }
                             }
                             _ => {}
@@ -224,18 +234,20 @@ fn main() {
                         idx += 1;
                     }
                 }
+                let mut history_vec = Vec::new();
+                for (key, val) in transaction_hashmap {
+                    let rope = ropes_hashmap.remove(&key).unwrap();
+                    rope.doc
+                        .write_to(std::fs::File::create(&key).unwrap())
+                        .unwrap();
+
+                    history_vec.push((key, val));
+                }
                 serde_json::to_writer(
                     std::fs::File::create("undofile.amogus").unwrap(),
-                    &transaction_hashmap,
+                    &history_vec,
                 )
                 .unwrap();
-                for (key, val) in transaction_hashmap {
-                    let rope = ropes_hashmap.get_mut(&key).unwrap();
-                    for j in val {
-                        j.apply(rope);
-                    }
-                    rope.write_to(std::fs::File::create(key).unwrap()).unwrap();
-                }
             });
 
         println!("found {imposters} imposters in your code");
@@ -251,15 +263,15 @@ fn main() {
             }
         }
             */
-        let transactions: HashMap<PathBuf, Vec<Transaction>> = serde_json::from_reader(
-            BufReader::new(std::fs::File::open("undofile.amogus").unwrap()),
-        )
+        let transactions: Vec<(PathBuf, History)> = serde_json::from_reader(BufReader::new(
+            std::fs::File::open("undofile.amogus").unwrap(),
+        ))
         .unwrap();
 
-        for (key, val) in transactions {
+        for (key, mut val) in transactions {
             let mut rope = Rope::from_reader(std::fs::File::open(&key).unwrap()).unwrap();
-            for j in val.into_iter().rev() {
-                j.invert(&rope).apply(&mut rope);
+            while let Some(t) = val.undo() {
+                t.apply(&mut rope);
             }
             rope.write_to(std::fs::File::create(key).unwrap()).unwrap();
         }
