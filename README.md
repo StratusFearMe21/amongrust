@@ -1,8 +1,8 @@
 # AmongRust ඞ ඞ ඞ ඞ ඞ ඞ ඞ 
 
-AmongRust is a tool developed by scientists and researchers at MAT. It reveals the imposters you've been hiding in your sus code (get it? source code LOL). Basically, AmongRust draws imposters in your code using code comments.
+AmongRust is a tool developed by scientists and researchers at MAT. It reveals the imposters you've been hiding in your sus code (get it? source code LOL). Basically, AmongRust changes `enum` and `struct` names in your code to reveal the sussiness within.
 
-AmongRust is totally non-destructive, and your code should work as normal (maybe), because it only adds comments to your code.
+AmongRust is totally non-destructive, and your code should work as normal (maybe), but no guarantees.
 Be careful, the imposters may be very few, or outrageously many. This is a feature, not a bug, and there is no way to remove the imposters. ඞ ඞ ඞ ඞ ඞ ඞ ඞ 
 
 
