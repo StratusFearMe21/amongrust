@@ -1,7 +1,12 @@
 use futures_util::TryFutureExt;
-use helix_lsp::{jsonrpc::Params, Call};
+use helix_core::{syntax::RopeProvider, Rope};
+use helix_lsp::{
+    jsonrpc::Params,
+    lsp::{DocumentChanges, OneOf, TextDocumentIdentifier},
+    Call, Position,
+};
 use rand::Rng;
-use std::env;
+use std::{collections::HashMap, env, path::PathBuf};
 use tree_sitter::{Query, QueryCursor};
 use walkdir::WalkDir;
 
@@ -24,21 +29,17 @@ fn get_files() -> Vec<String> {
 
 macro_rules! files {
     () => {
-        WalkDir::new("./src/")
-            .into_iter()
-            .flatten()
-            .filter_map(|f| {
-                let path = f.path();
-                if let Some(s) = path.to_str() {
-                    if s.ends_with(".rs") {
-                        Some(path)
-                    } else {
-                        None
-                    }
+        WalkDir::new("./src/").into_iter().flatten().filter(|f| {
+            if let Some(s) = f.path().to_str() {
+                if s.ends_with(".rs") {
+                    true
                 } else {
-                    None
+                    false
                 }
-            })
+            } else {
+                false
+            }
+        })
     };
 }
 
@@ -83,8 +84,10 @@ fn main() {
             */
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(tree_sitter_rust::language()).unwrap();
-        let query = Query::new(tree_sitter_rust::language(), include!("query.scm"));
+        let query = Query::new(tree_sitter_rust::language(), include_str!("query.scm")).unwrap();
         let mut cursor = QueryCursor::new();
+        let mut ropes_hashmap = HashMap::new();
+        let mut transaction_hashmap = HashMap::new();
 
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -96,7 +99,8 @@ fn main() {
 
                 lsp.capabilities
                     .get_or_try_init(|| lsp.initialize().map_ok(|response| response.capabilities))
-                    .await;
+                    .await
+                    .unwrap();
 
                 lsp.notify::<helix_lsp::lsp::notification::Initialized>(
                     helix_lsp::lsp::InitializedParams {},
@@ -127,7 +131,93 @@ fn main() {
                     }
                 }
 
-                for i in files!() {}
+                for i in files!() {
+                    ropes_hashmap
+                        .insert(
+                            i.path().to_path_buf(),
+                            Rope::from_reader(std::fs::File::open(i.path()).unwrap()).unwrap(),
+                        )
+                        .unwrap();
+                    let rope = ropes_hashmap.get(i.path()).unwrap();
+                    let tree = parser
+                        .parse_with(
+                            &mut |byte, _| {
+                                if byte <= rope.len_bytes() {
+                                    let (chunk, start_byte, _, _) = rope.chunk_at_byte(byte);
+                                    chunk[byte - start_byte..].as_bytes()
+                                } else {
+                                    // out of range
+                                    &[]
+                                }
+                            },
+                            None,
+                        )
+                        .unwrap();
+                    let captures = cursor
+                        .captures(&query, tree.root_node(), RopeProvider(rope.slice(..)))
+                        .peekable();
+
+                    for j in captures {
+                        let mut uri = String::from("file://");
+                        std::fmt::Write::write_fmt(
+                            &mut uri,
+                            format_args!("{}", std::fs::canonicalize(i.path()).unwrap().display()),
+                        )
+                        .unwrap();
+                        let capture = j.0.captures[0];
+                        let start = capture.node.start_position();
+                        let cut_data = rope.byte_slice(capture.node.byte_range());
+                        if capture.index != 2 {
+                            let result = lsp
+                                .rename_symbol(
+                                    TextDocumentIdentifier {
+                                        uri: uri.parse().unwrap(),
+                                    },
+                                    Position {
+                                        line: start.row as u32,
+                                        character: start.column as u32,
+                                    },
+                                    match capture.index {
+                                        0 => String::from("sus_") + cut_data.as_str().unwrap(),
+                                        _ => String::from("Sus") + cut_data.as_str().unwrap(),
+                                    },
+                                )
+                                .unwrap()
+                                .await
+                                .unwrap();
+                            match result.document_changes {
+                                Some(DocumentChanges::Edits(e)) => {
+                                    for f in e {
+                                        transaction_hashmap.insert(
+                                            PathBuf::from(f.text_document.uri.path().to_string()),
+                                            helix_lsp::util::generate_transaction_from_edits(
+                                                &rope,
+                                                f.edits
+                                                    .into_iter()
+                                                    .map(|g| match g {
+                                                        OneOf::Left(l) => l,
+                                                        OneOf::Right(r) => r.text_edit,
+                                                    })
+                                                    .collect(),
+                                                helix_lsp::OffsetEncoding::Utf8,
+                                            ),
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                serde_json::to_writer(
+                    std::fs::File::create("undofile.amogus").unwrap(),
+                    &transaction_hashmap,
+                )
+                .unwrap();
+                for (key, val) in transaction_hashmap {
+                    let rope = ropes_hashmap.get_mut(&key).unwrap();
+                    val.apply(rope);
+                }
             });
 
         println!("found {imposters} imposters in your code");

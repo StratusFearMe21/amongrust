@@ -67,7 +67,6 @@ dependencies = [
  "magnum",
  "rand",
  "rodio",
- "ropey",
  "serde",
  "serde_json",
  "tokio",
