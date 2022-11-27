@@ -11,7 +11,7 @@ It is possible to undo the changes made to your code because of my IMPOSTER-DETE
 
 Of course, you can also manually delete the comments if you want, because they're just comments, but i highly recommend using the "IAMTHEIMPOSTER" argument because that's what it was made for.
 
-Note: this crate was made by [Hiro](https://twitter.com/0x1hiro) at 2AM in his mum's basement. There is no guarantee that it will work as expected. Use AmongRust at your own risk. It took 34 long minutes to start and finish this AMBITIOUS project. Please give this project a star on [Github](https://github.com/0xhiro/amongrust) and subscribe to my [YouTube channel](https://www.youtube.com/channel/UCv3SId-GfOT7MCaHVl88SQQ) for fun programming videos, well, except you are an impo****
+Note: this crate was made by [Hiro](https://twitter.com/0x1hiro) and [StratusFearMe21](https://reddit.com/u/StratusFearMe21) at 2AM in his mum's basement. There is no guarantee that it will work as expected. Use AmongRust at your own risk. It took 34 long minutes to start and finish this AMBITIOUS project. Please give this project a star on [Github](https://github.com/0xhiro/amongrust) and subscribe to my [YouTube channel](https://www.youtube.com/channel/UCv3SId-GfOT7MCaHVl88SQQ) for fun programming videos, well, except you are an impo****
 
 # USAGE
 
