@@ -3,3 +3,5 @@
   
 (struct_item
   name: (type_identifier) @struct)
+  
+(impl_item) @impl

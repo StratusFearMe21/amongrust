@@ -83,7 +83,16 @@ fn main() {
                     if let Call::Notification(n) = rx.1 {
                         match n.params {
                             Params::Map(m) => {
-                                if let Some(m) = dbg!(m).values().nth(1) {
+                                println!("{:?}", m);
+                                let mut values = m.values();
+                                if let Some(m) = values.next() {
+                                    if let Some(s) = m.as_str() {
+                                        if s != "rustAnalyzer/Indexing" {
+                                            continue;
+                                        }
+                                    }
+                                }
+                                if let Some(m) = values.next() {
                                     if let Some(o) = m.as_object() {
                                         if let Some(o) = o.values().next() {
                                             if let Some(s) = o.as_str() {
@@ -101,15 +110,6 @@ fn main() {
                 }
 
                 for i in files!() {
-                    ropes_hashmap.insert(
-                        std::fs::canonicalize(i.path()).unwrap(),
-                        State {
-                            doc: Rope::from_reader(std::fs::File::open(i.path()).unwrap()).unwrap(),
-                            selection: Selection::point(0),
-                        },
-                    );
-                    let path = std::fs::canonicalize(i.path()).unwrap();
-                    let rope = ropes_hashmap.get_mut(&path).unwrap();
                     fn parse_rope(rope: &Rope, parser: &mut Parser, tree: Option<&Tree>) -> Tree {
                         let mut parse_with_rope = |byte, _| {
                             if byte <= rope.len_bytes() {
@@ -123,15 +123,28 @@ fn main() {
                         parser.parse_with(&mut parse_with_rope, tree).unwrap()
                     }
 
-                    let mut tree = parse_rope(&rope.doc, &mut parser, None);
+                    let rope = Rope::from_reader(std::fs::File::open(i.path()).unwrap()).unwrap();
+                    let tree = parse_rope(&rope, &mut parser, None);
+                    ropes_hashmap.insert(
+                        std::fs::canonicalize(i.path()).unwrap(),
+                        (
+                            State {
+                                doc: rope,
+                                selection: Selection::point(0),
+                            },
+                            tree,
+                        ),
+                    );
 
                     let mut idx = 0;
+                    let mut danger_range = 0..0;
 
                     loop {
+                        let path = std::fs::canonicalize(i.path()).unwrap();
                         let mut captures = cursor.captures(
                             &query,
-                            tree.root_node(),
-                            RopeProvider(rope.doc.slice(..)),
+                            ropes_hashmap.get(&path).unwrap().1.root_node(),
+                            RopeProvider(ropes_hashmap.get(&path).unwrap().0.doc.slice(..)),
                         );
 
                         let mut uri = String::from("file://");
@@ -141,17 +154,32 @@ fn main() {
                         )
                         .unwrap();
                         let capture = if let Some(j) = captures.nth(idx) {
+                            if j.0.captures.len() != 1 {
+                                continue;
+                            }
+
                             j.0.captures[0]
                         } else {
                             break;
                         };
-                        let start = capture.node.start_position();
-                        let cut_data = dbg!(rope.doc.byte_slice(capture.node.byte_range()));
-                        if cut_data == "main" {
-                            idx += 1;
+                        idx += 1;
+                        if capture.index == 2 {
+                            danger_range = capture.node.byte_range();
+                            continue;
+                        } else if danger_range.contains(&capture.node.start_byte()) {
                             continue;
                         }
-                        let result = lsp
+                        let start = capture.node.start_position();
+                        let cut_data = dbg!(ropes_hashmap
+                            .get(&path)
+                            .unwrap()
+                            .0
+                            .doc
+                            .byte_slice(capture.node.byte_range()));
+                        if cut_data == "main" {
+                            continue;
+                        }
+                        if let Ok(result) = lsp
                             .rename_symbol(
                                 TextDocumentIdentifier {
                                     uri: uri.parse().unwrap(),
@@ -162,67 +190,196 @@ fn main() {
                                 },
                                 match capture.index {
                                     0 => match rand::thread_rng().gen_range(0..5) {
-                                        0 => String::from("sus_") + cut_data.as_str().unwrap(),
-                                        1 => String::from("sussy_") + cut_data.as_str().unwrap(),
-                                        2 => String::from("baka_") + cut_data.as_str().unwrap(),
-                                        3 => String::from("amogus_") + cut_data.as_str().unwrap(),
-                                        _ => String::from("imposter_") + cut_data.as_str().unwrap(),
+                                        0 => {
+                                            String::from("sus_")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
+                                        1 => {
+                                            String::from("sussy_")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
+                                        2 => {
+                                            String::from("baka_")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
+                                        3 => {
+                                            String::from("amogus_")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
+                                        _ => {
+                                            String::from("imposter_")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
                                     },
                                     _ => match rand::thread_rng().gen_range(0..5) {
-                                        0 => String::from("Sus") + cut_data.as_str().unwrap(),
-                                        1 => String::from("Sussy") + cut_data.as_str().unwrap(),
-                                        2 => String::from("Baka") + cut_data.as_str().unwrap(),
-                                        3 => String::from("Amogus") + cut_data.as_str().unwrap(),
-                                        _ => String::from("Imposter") + cut_data.as_str().unwrap(),
+                                        0 => {
+                                            String::from("Sus")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
+                                        1 => {
+                                            String::from("Sussy")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
+                                        2 => {
+                                            String::from("Baka")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
+                                        3 => {
+                                            String::from("Amogus")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
+                                        _ => {
+                                            String::from("Imposter")
+                                                + if let Some(d) = cut_data.as_str() {
+                                                    d
+                                                } else {
+                                                    continue;
+                                                }
+                                        }
                                     },
                                 },
                             )
                             .unwrap()
                             .await
-                            .unwrap();
-                        match result.document_changes {
-                            Some(DocumentChanges::Edits(e)) => {
-                                for f in e {
-                                    let edit = helix_lsp::util::generate_transaction_from_edits(
-                                        &rope.doc,
-                                        f.edits
-                                            .into_iter()
-                                            .map(|g| match g {
-                                                OneOf::Left(l) => l,
-                                                OneOf::Right(r) => r.text_edit,
-                                            })
-                                            .collect(),
-                                        helix_lsp::OffsetEncoding::Utf8,
-                                    );
-                                    transaction_hashmap
-                                        .entry(
-                                            std::fs::canonicalize(
-                                                f.text_document.uri.path().to_string(),
-                                            )
-                                            .unwrap(),
+                        {
+                            match result.document_changes {
+                                Some(DocumentChanges::Edits(e)) => {
+                                    for f in e {
+                                        let path = std::fs::canonicalize(
+                                            f.text_document.uri.path().to_string(),
                                         )
-                                        .or_insert_with(History::default)
-                                        .commit_revision(&edit, &rope);
-                                    helix_core::syntax::generate_edits(&rope.doc, edit.changes())
-                                        .iter()
-                                        .for_each(|f| tree.edit(f));
-                                    edit.apply(&mut rope.doc);
-                                    tree = parse_rope(&rope.doc, &mut parser, Some(&tree));
+                                        .unwrap();
+                                        if path.as_path() == i.path() {
+                                            let rope = ropes_hashmap.get_mut(&path).unwrap();
+                                            let edit =
+                                                helix_lsp::util::generate_transaction_from_edits(
+                                                    &rope.0.doc,
+                                                    f.edits
+                                                        .into_iter()
+                                                        .map(|g| match g {
+                                                            OneOf::Left(l) => l,
+                                                            OneOf::Right(r) => r.text_edit,
+                                                        })
+                                                        .collect(),
+                                                    helix_lsp::OffsetEncoding::Utf8,
+                                                );
+
+                                            transaction_hashmap
+                                                .entry(path)
+                                                .or_insert_with(History::default)
+                                                .commit_revision(&edit, &rope.0);
+                                            helix_core::syntax::generate_edits(
+                                                &rope.0.doc,
+                                                edit.changes(),
+                                            )
+                                            .iter()
+                                            .for_each(|f| rope.1.edit(f));
+                                            edit.apply(&mut rope.0.doc);
+                                            rope.1 =
+                                                parse_rope(&rope.0.doc, &mut parser, Some(&rope.1));
+                                        } else {
+                                            let file_rope = ropes_hashmap
+                                                .entry(path.clone())
+                                                .or_insert_with_key(|k| {
+                                                    let rope = Rope::from_reader(
+                                                        std::fs::File::open(k).unwrap(),
+                                                    )
+                                                    .unwrap();
+                                                    let tree = parse_rope(&rope, &mut parser, None);
+                                                    (
+                                                        State {
+                                                            doc: rope,
+                                                            selection: Selection::point(0),
+                                                        },
+                                                        tree,
+                                                    )
+                                                });
+
+                                            let edit =
+                                                helix_lsp::util::generate_transaction_from_edits(
+                                                    &file_rope.0.doc,
+                                                    f.edits
+                                                        .into_iter()
+                                                        .map(|g| match g {
+                                                            OneOf::Left(l) => l,
+                                                            OneOf::Right(r) => r.text_edit,
+                                                        })
+                                                        .collect(),
+                                                    helix_lsp::OffsetEncoding::Utf8,
+                                                );
+
+                                            transaction_hashmap
+                                                .entry(path)
+                                                .or_insert_with(History::default)
+                                                .commit_revision(&edit, &file_rope.0);
+                                            helix_core::syntax::generate_edits(
+                                                &file_rope.0.doc,
+                                                edit.changes(),
+                                            )
+                                            .iter()
+                                            .for_each(|f| file_rope.1.edit(f));
+                                            edit.apply(&mut file_rope.0.doc);
+                                            file_rope.1 = parse_rope(
+                                                &file_rope.0.doc,
+                                                &mut parser,
+                                                Some(&file_rope.1),
+                                            );
+                                        }
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
                         }
-                        idx += 1;
                     }
                 }
                 let mut history_vec = Vec::new();
                 for (key, val) in transaction_hashmap {
-                    let rope = ropes_hashmap.remove(&key).unwrap();
-                    rope.doc
-                        .write_to(std::fs::File::create(&key).unwrap())
-                        .unwrap();
+                    if let Some(rope) =
+                        ropes_hashmap.remove(dbg!(&std::fs::canonicalize(&key).unwrap()))
+                    {
+                        rope.0
+                            .doc
+                            .write_to(std::fs::File::create(&key).unwrap())
+                            .unwrap();
 
-                    history_vec.push((key, val));
+                        history_vec.push((key, val));
+                    }
                 }
                 println!("found {} imposters in your code", history_vec.len());
                 serde_json::to_writer(
