@@ -1,7 +1,5 @@
-(function_item
-  name: (identifier) @function)
+(enum_item
+  name: (type_identifier) @enum)
   
 (struct_item
   name: (type_identifier) @struct)
-  
-(impl_item) @impl
