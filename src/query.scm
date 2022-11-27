@@ -3,8 +3,3 @@
   
 (struct_item
   name: (type_identifier) @struct)
-  
-[
-  (line_comment)
-  (block_comment)
-] @comment

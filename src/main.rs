@@ -1,13 +1,13 @@
 use futures_util::TryFutureExt;
-use helix_core::{syntax::RopeProvider, Rope};
+use helix_core::{syntax::RopeProvider, Rope, Transaction};
 use helix_lsp::{
     jsonrpc::Params,
     lsp::{DocumentChanges, OneOf, TextDocumentIdentifier},
     Call, Position,
 };
 use rand::Rng;
-use std::{collections::HashMap, env, path::PathBuf};
-use tree_sitter::{Query, QueryCursor};
+use std::{collections::HashMap, env, io::BufReader, path::PathBuf};
+use tree_sitter::{Parser, Query, QueryCursor, Tree};
 use walkdir::WalkDir;
 
 // code comments are good for documentation so this is a comment uwu
@@ -137,78 +137,91 @@ fn main() {
                         Rope::from_reader(std::fs::File::open(i.path()).unwrap()).unwrap(),
                     );
                     let path = std::fs::canonicalize(i.path()).unwrap();
-                    let rope = ropes_hashmap.get(&path).unwrap();
-                    let tree = parser
-                        .parse_with(
-                            &mut |byte, _| {
-                                if byte <= rope.len_bytes() {
-                                    let (chunk, start_byte, _, _) = rope.chunk_at_byte(byte);
-                                    chunk[byte - start_byte..].as_bytes()
-                                } else {
-                                    // out of range
-                                    &[]
-                                }
-                            },
-                            None,
-                        )
-                        .unwrap();
-                    let captures = cursor
-                        .captures(&query, tree.root_node(), RopeProvider(rope.slice(..)))
-                        .peekable();
+                    let rope = ropes_hashmap.get_mut(&path).unwrap();
+                    fn parse_rope(rope: &Rope, parser: &mut Parser, tree: Option<&Tree>) -> Tree {
+                        let mut parse_with_rope = |byte, _| {
+                            if byte <= rope.len_bytes() {
+                                let (chunk, start_byte, _, _) = rope.chunk_at_byte(byte);
+                                chunk[byte - start_byte..].as_bytes()
+                            } else {
+                                // out of range
+                                &[]
+                            }
+                        };
+                        parser.parse_with(&mut parse_with_rope, tree).unwrap()
+                    }
 
-                    for j in captures {
+                    let mut tree = parse_rope(&rope, &mut parser, None);
+
+                    let mut idx = 0;
+
+                    loop {
+                        let mut captures =
+                            cursor.captures(&query, tree.root_node(), RopeProvider(rope.slice(..)));
+
                         let mut uri = String::from("file://");
                         std::fmt::Write::write_fmt(
                             &mut uri,
                             format_args!("{}", std::fs::canonicalize(i.path()).unwrap().display()),
                         )
                         .unwrap();
-                        let capture = j.0.captures[0];
+                        let capture = if let Some(j) = captures.nth(idx) {
+                            j.0.captures[0]
+                        } else {
+                            break;
+                        };
                         let start = capture.node.start_position();
-                        let cut_data = rope.byte_slice(capture.node.byte_range());
-                        if capture.index != 2 {
-                            let result = lsp
-                                .rename_symbol(
-                                    TextDocumentIdentifier {
-                                        uri: uri.parse().unwrap(),
-                                    },
-                                    Position {
-                                        line: start.row as u32,
-                                        character: start.column as u32,
-                                    },
-                                    match capture.index {
-                                        0 => String::from("sus_") + cut_data.as_str().unwrap(),
-                                        _ => String::from("Sus") + cut_data.as_str().unwrap(),
-                                    },
-                                )
-                                .unwrap()
-                                .await
-                                .unwrap();
-                            match result.document_changes {
-                                Some(DocumentChanges::Edits(e)) => {
-                                    for f in e {
-                                        transaction_hashmap.insert(
+                        let cut_data = dbg!(rope.byte_slice(capture.node.byte_range()));
+                        let result = lsp
+                            .rename_symbol(
+                                TextDocumentIdentifier {
+                                    uri: uri.parse().unwrap(),
+                                },
+                                Position {
+                                    line: start.row as u32,
+                                    character: start.column as u32,
+                                },
+                                match capture.index {
+                                    0 => String::from("sus_") + cut_data.as_str().unwrap(),
+                                    _ => String::from("Sus") + cut_data.as_str().unwrap(),
+                                },
+                            )
+                            .unwrap()
+                            .await
+                            .unwrap();
+                        match result.document_changes {
+                            Some(DocumentChanges::Edits(e)) => {
+                                for f in e {
+                                    let edit = helix_lsp::util::generate_transaction_from_edits(
+                                        &rope,
+                                        f.edits
+                                            .into_iter()
+                                            .map(|g| match g {
+                                                OneOf::Left(l) => l,
+                                                OneOf::Right(r) => r.text_edit,
+                                            })
+                                            .collect(),
+                                        helix_lsp::OffsetEncoding::Utf8,
+                                    );
+                                    helix_core::syntax::generate_edits(&rope, edit.changes())
+                                        .iter()
+                                        .for_each(|f| tree.edit(f));
+                                    edit.apply(rope);
+                                    tree = parse_rope(&rope, &mut parser, Some(&tree));
+                                    transaction_hashmap
+                                        .entry(
                                             std::fs::canonicalize(
                                                 f.text_document.uri.path().to_string(),
                                             )
                                             .unwrap(),
-                                            helix_lsp::util::generate_transaction_from_edits(
-                                                &rope,
-                                                f.edits
-                                                    .into_iter()
-                                                    .map(|g| match g {
-                                                        OneOf::Left(l) => l,
-                                                        OneOf::Right(r) => r.text_edit,
-                                                    })
-                                                    .collect(),
-                                                helix_lsp::OffsetEncoding::Utf8,
-                                            ),
-                                        );
-                                    }
+                                        )
+                                        .or_insert_with(Vec::new)
+                                        .push(edit);
                                 }
-                                _ => {}
                             }
+                            _ => {}
                         }
+                        idx += 1;
                     }
                 }
                 serde_json::to_writer(
@@ -218,7 +231,9 @@ fn main() {
                 .unwrap();
                 for (key, val) in transaction_hashmap {
                     let rope = ropes_hashmap.get_mut(&key).unwrap();
-                    val.apply(rope);
+                    for j in val {
+                        j.apply(rope);
+                    }
                     rope.write_to(std::fs::File::create(key).unwrap()).unwrap();
                 }
             });
@@ -236,6 +251,18 @@ fn main() {
             }
         }
             */
+        let transactions: HashMap<PathBuf, Vec<Transaction>> = serde_json::from_reader(
+            BufReader::new(std::fs::File::open("undofile.amogus").unwrap()),
+        )
+        .unwrap();
+
+        for (key, val) in transactions {
+            let mut rope = Rope::from_reader(std::fs::File::open(&key).unwrap()).unwrap();
+            for j in val.into_iter().rev() {
+                j.invert(&rope).apply(&mut rope);
+            }
+            rope.write_to(std::fs::File::create(key).unwrap()).unwrap();
+        }
 
         println!("eliminated all imposters from your sus code. it was a clean job");
     }
