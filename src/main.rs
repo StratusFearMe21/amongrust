@@ -132,13 +132,12 @@ fn main() {
                 }
 
                 for i in files!() {
-                    ropes_hashmap
-                        .insert(
-                            i.path().to_path_buf(),
-                            Rope::from_reader(std::fs::File::open(i.path()).unwrap()).unwrap(),
-                        )
-                        .unwrap();
-                    let rope = ropes_hashmap.get(i.path()).unwrap();
+                    ropes_hashmap.insert(
+                        std::fs::canonicalize(i.path()).unwrap(),
+                        Rope::from_reader(std::fs::File::open(i.path()).unwrap()).unwrap(),
+                    );
+                    let path = std::fs::canonicalize(i.path()).unwrap();
+                    let rope = ropes_hashmap.get(&path).unwrap();
                     let tree = parser
                         .parse_with(
                             &mut |byte, _| {
@@ -189,7 +188,10 @@ fn main() {
                                 Some(DocumentChanges::Edits(e)) => {
                                     for f in e {
                                         transaction_hashmap.insert(
-                                            PathBuf::from(f.text_document.uri.path().to_string()),
+                                            std::fs::canonicalize(
+                                                f.text_document.uri.path().to_string(),
+                                            )
+                                            .unwrap(),
                                             helix_lsp::util::generate_transaction_from_edits(
                                                 &rope,
                                                 f.edits
@@ -217,6 +219,7 @@ fn main() {
                 for (key, val) in transaction_hashmap {
                     let rope = ropes_hashmap.get_mut(&key).unwrap();
                     val.apply(rope);
+                    rope.write_to(std::fs::File::create(key).unwrap()).unwrap();
                 }
             });
 
